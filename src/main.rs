@@ -18,7 +18,11 @@ impl eframe::App for MyApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked()
                     {
-                        //To do: Implement open functionality
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            if let Ok(contents) = std::fs::read_to_string(path) {
+                                self.text = contents;
+                            }
+                        }
                     }
                     if ui.button("Save").clicked()
                     {
@@ -26,7 +30,11 @@ impl eframe::App for MyApp {
                     }
                     if ui.button("Save As").clicked()
                     {
-                        //To do: Implement save as functionality
+                        if let Some(path) = rfd::FileDialog::new().save_file() {
+                            if let Err(e) = std::fs::write(&path, &self.text) {
+                                eprintln!("Failed to save file: {}", e);
+                            }
+                        }
                     }
                     ui.separator();
                     // Adds a button in the dropdown menu
