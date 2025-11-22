@@ -17,6 +17,8 @@ pub struct MyApp {
     pub error_message: String,
     pub show_find_bar: bool,
     pub find_query: String,
+    pub find_results: Vec<usize>,
+    pub current_match_index: Option<usize>,
 }
 
 impl MyApp {
@@ -100,6 +102,52 @@ impl MyApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+
+    /// Update search results based on current query
+    fn update_search_results(&mut self) {
+        self.find_results.clear();
+        self.current_match_index = None;
+        
+        if self.find_query.is_empty() {
+            return;
+        }
+        
+        self.find_results = self.text.match_indices(&self.find_query).map(|(i, _)| i).collect();
+        
+        if !self.find_results.is_empty() {
+            self.current_match_index = Some(0);
+        }
+    }
+    
+    /// Move to the next search result
+    fn find_next(&mut self) {
+        if self.find_results.is_empty() {
+            return;
+        }
+        
+        if let Some(current) = self.current_match_index {
+            self.current_match_index = Some((current + 1) % self.find_results.len());
+        } else {
+            self.current_match_index = Some(0);
+        }
+    }
+    
+    /// Move to the previous search result
+    fn find_previous(&mut self) {
+        if self.find_results.is_empty() {
+            return;
+        }
+        
+        if let Some(current) = self.current_match_index {
+            if current == 0 {
+                self.current_match_index = Some(self.find_results.len() - 1);
+            } else {
+                self.current_match_index = Some(current - 1);
+            }
+        } else {
+            self.current_match_index = Some(self.find_results.len() - 1);
+        }
+    }
 }
 
 impl eframe::App for MyApp {
@@ -178,20 +226,33 @@ impl eframe::App for MyApp {
                 ui.horizontal(|ui| {
                     ui.label("Find:");
                     let response = ui.text_edit_singleline(&mut self.find_query);
+                    if response.changed() {
+                        self.update_search_results();
+                    }
+                    
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        // To do: Implement find next logic
+                        self.find_next();
                     }
                     
                     if ui.button("Next").clicked() {
-                        // To do: Implement find next logic
+                        self.find_next();
                     }
                     
                     if ui.button("Previous").clicked() {
-                        // To do: Implement find previous logic
+                        self.find_previous();
+                    }
+                    
+                    if let Some(index) = self.current_match_index {
+                        ui.label(format!("Match {} of {}", index + 1, self.find_results.len()));
+                    } else if !self.find_query.is_empty() && self.find_results.is_empty() {
+                        ui.label("No matches found");
                     }
                     
                     if ui.button("Close").clicked() {
                         self.show_find_bar = false;
+                        self.find_query.clear();
+                        self.find_results.clear();
+                        self.current_match_index = None;
                     }
                 });
             });
