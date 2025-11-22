@@ -18,10 +18,18 @@ struct MyApp {
     is_dirty: bool,
     last_saved_text: String,
     show_quit_dialog: bool,
+    pending_quit: bool,
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle pending quit from previous frame
+        if self.pending_quit {
+            self.pending_quit = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        
         // Handle window close button (X)
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.is_dirty {
@@ -290,8 +298,8 @@ impl eframe::App for MyApp {
                     self.show_quit_dialog = false;
                 }
                 QuitAction::DontSave => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     self.show_quit_dialog = false;
+                    self.pending_quit = true;
                 }
                 QuitAction::Cancel => {
                     self.show_quit_dialog = false;
