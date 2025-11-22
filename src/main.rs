@@ -22,10 +22,19 @@ struct MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle close requests (e.g., Cmd+Q on macOS, clicking X button)
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.is_dirty {
+                // Prevent immediate close and show dialog
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.show_quit_dialog = true;
+            }
+            // If not dirty, allow the close to proceed naturally
+        }
+        
         // Handle keyboard shortcuts
         let mut open_file = false;
         let mut save_file = false;
-        let mut quit_app = false;
         
         ctx.input(|i| {
             // Cmd+O for Open (Ctrl+O on non-macOS)
@@ -36,11 +45,6 @@ impl eframe::App for MyApp {
             // Cmd+S for Save (Ctrl+S on non-macOS)
             if i.modifiers.command && i.key_pressed(egui::Key::S) {
                 save_file = true;
-            }
-            
-            // Cmd+Q for Quit (Ctrl+Q on non-macOS)
-            if i.modifiers.command && i.key_pressed(egui::Key::Q) {
-                quit_app = true;
             }
         });
         
@@ -81,14 +85,6 @@ impl eframe::App for MyApp {
                         self.is_dirty = false;
                     }
                 }
-            }
-        }
-        
-        if quit_app {
-            if self.is_dirty {
-                self.show_quit_dialog = true;
-            } else {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
         
@@ -155,7 +151,7 @@ impl eframe::App for MyApp {
                     }
                     ui.separator();
                     // Adds a button in the dropdown menu
-                    if ui.button("Quit").on_hover_text("Cmd+Q").clicked() {
+                    if ui.button("Quit").clicked() {
                         // Check if there are unsaved changes
                         if self.is_dirty {
                             self.show_quit_dialog = true;
