@@ -8,6 +8,13 @@ enum QuitAction {
     Cancel,
 }
 
+enum OpenAction {
+    None,
+    Save,
+    DontSave,
+    Cancel,
+}
+
 
 #[derive(Default)]
 struct MyApp {
@@ -18,6 +25,8 @@ struct MyApp {
     is_dirty: bool,
     last_saved_text: String,
     show_quit_dialog: bool,
+    show_open_dialog: bool,
+    pending_open_path: Option<std::path::PathBuf>,
 }
 
 impl MyApp {
@@ -100,8 +109,15 @@ impl eframe::App for MyApp {
         // Execute keyboard shortcut actions
         if open_file {
             if let Some(path) = rfd::FileDialog::new().pick_file() {
-                if let Err(e) = self.open_file(path) {
-                    eprintln!("Failed to open file: {}", e);
+                if self.is_dirty {
+                    // Show confirmation dialog
+                    self.pending_open_path = Some(path);
+                    self.show_open_dialog = true;
+                } else {
+                    // No unsaved changes, open directly
+                    if let Err(e) = self.open_file(path) {
+                        eprintln!("Failed to open file: {}", e);
+                    }
                 }
             }
         }
@@ -133,8 +149,15 @@ impl eframe::App for MyApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").on_hover_text("Cmd+O").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            if let Err(e) = self.open_file(path) {
-                                eprintln!("Failed to open file: {}", e);
+                            if self.is_dirty {
+                                // Show confirmation dialog
+                                self.pending_open_path = Some(path);
+                                self.show_open_dialog = true;
+                            } else {
+                                // No unsaved changes, open directly
+                                if let Err(e) = self.open_file(path) {
+                                    eprintln!("Failed to open file: {}", e);
+                                }
                             }
                         }
                     }
@@ -278,6 +301,74 @@ impl eframe::App for MyApp {
                     self.show_quit_dialog = false;
                 }
                 QuitAction::None => {}
+            }
+        }
+        
+        // Open file confirmation dialog
+        if self.show_open_dialog {
+            let mut action = OpenAction::None;
+            egui::Window::new("Unsaved Changes")
+                .open(&mut self.show_open_dialog)
+                .resizable(false)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label("You have unsaved changes. Do you want to save before opening a new file?");
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() {
+                            action = OpenAction::Save;
+                        }
+                        if ui.button("Don't Save").clicked() {
+                            action = OpenAction::DontSave;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            action = OpenAction::Cancel;
+                        }
+                    });
+                });
+            
+            match action {
+                OpenAction::Save => {
+                    // Save the current file first
+                    if let Err(_) = self.save_file() {
+                        // No file path, prompt for Save As
+                        if let Some(path) = rfd::FileDialog::new().save_file() {
+                            if let Err(e) = self.save_file_as(path) {
+                                eprintln!("Failed to save file: {}", e);
+                            } else {
+                                // Now open the pending file
+                                if let Some(pending_path) = self.pending_open_path.take() {
+                                    if let Err(e) = self.open_file(pending_path) {
+                                        eprintln!("Failed to open file: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Save succeeded, now open the pending file
+                        if let Some(pending_path) = self.pending_open_path.take() {
+                            if let Err(e) = self.open_file(pending_path) {
+                                eprintln!("Failed to open file: {}", e);
+                            }
+                        }
+                    }
+                    self.show_open_dialog = false;
+                }
+                OpenAction::DontSave => {
+                    // Discard changes and open the pending file
+                    if let Some(pending_path) = self.pending_open_path.take() {
+                        if let Err(e) = self.open_file(pending_path) {
+                            eprintln!("Failed to open file: {}", e);
+                        }
+                    }
+                    self.show_open_dialog = false;
+                }
+                OpenAction::Cancel => {
+                    // Cancel the open operation
+                    self.pending_open_path = None;
+                    self.show_open_dialog = false;
+                }
+                OpenAction::None => {}
             }
         }
     }
