@@ -1,5 +1,5 @@
 use eframe::egui;
-use crate::actions::{QuitAction, OpenAction};
+use crate::actions::ConfirmationAction;
 use crate::file_ops;
 use crate::ui::{menu, status_bar, dialogs};
 
@@ -185,7 +185,7 @@ impl eframe::App for MyApp {
         // Quit confirmation dialog
         let quit_action = dialogs::render_quit_dialog(ctx, &mut self.show_quit_dialog);
         match quit_action {
-            QuitAction::Save => {
+            ConfirmationAction::Save => {
                 if self.save_file().is_err() {
                     if let Some(path) = rfd::FileDialog::new().save_file() {
                         if let Err(e) = self.save_file_as(path) {
@@ -199,21 +199,21 @@ impl eframe::App for MyApp {
                 }
                 self.show_quit_dialog = false;
             }
-            QuitAction::DontSave => {
+            ConfirmationAction::DontSave => {
                 self.show_quit_dialog = false;
                 self.is_dirty = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            QuitAction::Cancel => {
+            ConfirmationAction::Cancel => {
                 self.show_quit_dialog = false;
             }
-            QuitAction::None => {}
+            ConfirmationAction::None => {}
         }
         
         // Open file confirmation dialog
         let open_action = dialogs::render_open_dialog(ctx, &mut self.show_open_dialog);
         match open_action {
-            OpenAction::Save => {
+            ConfirmationAction::Save => {
                 if self.save_file().is_err() {
                     if let Some(path) = rfd::FileDialog::new().save_file() {
                         if let Err(e) = self.save_file_as(path) {
@@ -229,17 +229,17 @@ impl eframe::App for MyApp {
                 }
                 self.show_open_dialog = false;
             }
-            OpenAction::DontSave => {
+            ConfirmationAction::DontSave => {
                 if let Some(path) = rfd::FileDialog::new().pick_file()
                     && let Err(e) = self.open_file(path) {
                         self.show_error(format!("Failed to open file: {}", e));
                     }
                 self.show_open_dialog = false;
             }
-            OpenAction::Cancel => {
+            ConfirmationAction::Cancel => {
                 self.show_open_dialog = false;
             }
-            OpenAction::None => {}
+            ConfirmationAction::None => {}
         }
         
         // Error dialog

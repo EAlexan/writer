@@ -1,5 +1,5 @@
 use eframe::egui;
-use crate::actions::{QuitAction, OpenAction};
+use crate::actions::ConfirmationAction;
 
 /// Render the About dialog window
 pub fn render_about_dialog(
@@ -30,8 +30,8 @@ pub fn render_about_dialog(
 pub fn render_quit_dialog(
     ctx: &egui::Context,
     show_quit_dialog: &mut bool,
-) -> QuitAction {
-    let mut action = QuitAction::None;
+) -> ConfirmationAction {
+    let mut action = ConfirmationAction::None;
     
     if *show_quit_dialog {
         egui::Window::new("Unsaved Changes")
@@ -43,13 +43,13 @@ pub fn render_quit_dialog(
                 ui.separator();
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        action = QuitAction::Save;
+                        action = ConfirmationAction::Save;
                     }
                     if ui.button("Don't Save").clicked() {
-                        action = QuitAction::DontSave;
+                        action = ConfirmationAction::DontSave;
                     }
                     if ui.button("Cancel").clicked() {
-                        action = QuitAction::Cancel;
+                        action = ConfirmationAction::Cancel;
                     }
                 });
             });
@@ -62,8 +62,8 @@ pub fn render_quit_dialog(
 pub fn render_open_dialog(
     ctx: &egui::Context,
     show_open_dialog: &mut bool,
-) -> OpenAction {
-    let mut action = OpenAction::None;
+) -> ConfirmationAction {
+    let mut action = ConfirmationAction::None;
     
     if *show_open_dialog {
         egui::Window::new("Unsaved Changes")
@@ -75,13 +75,13 @@ pub fn render_open_dialog(
                 ui.separator();
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        action = OpenAction::Save;
+                        action = ConfirmationAction::Save;
                     }
                     if ui.button("Don't Save").clicked() {
-                        action = OpenAction::DontSave;
+                        action = ConfirmationAction::DontSave;
                     }
                     if ui.button("Cancel").clicked() {
-                        action = OpenAction::Cancel;
+                        action = ConfirmationAction::Cancel;
                     }
                 });
             });
