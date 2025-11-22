@@ -22,6 +22,58 @@ struct MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle keyboard shortcuts
+        ctx.input(|i| {
+            // Ctrl+O for Open
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::O) {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Ok(contents) = std::fs::read_to_string(&path) {
+                        self.text = contents.clone();
+                        self.last_saved_text = contents;
+                        self.filename = path.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string());
+                        self.file_path = Some(path);
+                        self.is_dirty = false;
+                    }
+                }
+            }
+            
+            // Ctrl+S for Save
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::S) {
+                if let Some(path) = &self.file_path {
+                    if let Err(e) = std::fs::write(path, &self.text) {
+                        eprintln!("Failed to save file: {}", e);
+                    } else {
+                        self.last_saved_text = self.text.clone();
+                        self.is_dirty = false;
+                    }
+                } else {
+                    // No file path, prompt for Save As
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        if let Err(e) = std::fs::write(&path, &self.text) {
+                            eprintln!("Failed to save file: {}", e);
+                        } else {
+                            self.last_saved_text = self.text.clone();
+                            self.filename = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|s| s.to_string());
+                            self.file_path = Some(path);
+                            self.is_dirty = false;
+                        }
+                    }
+                }
+            }
+            
+            // Ctrl+Q for Quit
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::Q) {
+                if self.is_dirty {
+                    self.show_quit_dialog = true;
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        });
         
          // Menubar at the top
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -29,7 +81,7 @@ impl eframe::App for MyApp {
             egui::MenuBar::new().ui(ui, |ui| {
                 // Adds a menu button named "File"
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open").clicked()
+                    if ui.button("Open").on_hover_text("Ctrl+O").clicked()
                     {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                             if let Ok(contents) = std::fs::read_to_string(&path) {
@@ -43,7 +95,7 @@ impl eframe::App for MyApp {
                             }
                         }
                     }
-                    if ui.button("Save").clicked()
+                    if ui.button("Save").on_hover_text("Ctrl+S").clicked()
                     {
                         // If we have a file path, save to it; otherwise, prompt for a new file
                         if let Some(path) = &self.file_path {
@@ -86,7 +138,7 @@ impl eframe::App for MyApp {
                     }
                     ui.separator();
                     // Adds a button in the dropdown menu
-                    if ui.button("Quit").clicked() {
+                    if ui.button("Quit").on_hover_text("Ctrl+Q").clicked() {
                         // Check if there are unsaved changes
                         if self.is_dirty {
                             self.show_quit_dialog = true;
