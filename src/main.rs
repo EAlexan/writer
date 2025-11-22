@@ -5,6 +5,7 @@ use eframe::egui::Align;
 struct MyApp {
     text: String,
     show_about_window: bool,
+    filename: Option<String>,
 }
 
 impl eframe::App for MyApp {
@@ -19,8 +20,11 @@ impl eframe::App for MyApp {
                     if ui.button("Open").clicked()
                     {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            if let Ok(contents) = std::fs::read_to_string(path) {
+                            if let Ok(contents) = std::fs::read_to_string(&path) {
                                 self.text = contents;
+                                self.filename = path.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .map(|s| s.to_string());
                             }
                         }
                     }
@@ -66,7 +70,8 @@ impl eframe::App for MyApp {
         // status bar at the bottom
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(format!("{} characters", self.text.len()));
+                let display_name = self.filename.as_deref().unwrap_or("untitled");
+                ui.label(display_name);
                 ui.with_layout(egui::Layout::right_to_left(Align::LEFT), |ui| {
                     ui.label("Ready");
                 });
