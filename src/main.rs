@@ -26,7 +26,6 @@ struct MyApp {
     last_saved_text: String,
     show_quit_dialog: bool,
     show_open_dialog: bool,
-    pending_open_path: Option<std::path::PathBuf>,
 }
 
 impl MyApp {
@@ -108,13 +107,12 @@ impl eframe::App for MyApp {
         
         // Execute keyboard shortcut actions
         if open_file {
-            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                if self.is_dirty {
-                    // Show confirmation dialog
-                    self.pending_open_path = Some(path);
-                    self.show_open_dialog = true;
-                } else {
-                    // No unsaved changes, open directly
+            if self.is_dirty {
+                // Show confirmation dialog first
+                self.show_open_dialog = true;
+            } else {
+                // No unsaved changes, open file picker directly
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
                     if let Err(e) = self.open_file(path) {
                         eprintln!("Failed to open file: {}", e);
                     }
@@ -148,13 +146,12 @@ impl eframe::App for MyApp {
                 // Adds a menu button named "File"
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").on_hover_text("Cmd+O").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            if self.is_dirty {
-                                // Show confirmation dialog
-                                self.pending_open_path = Some(path);
-                                self.show_open_dialog = true;
-                            } else {
-                                // No unsaved changes, open directly
+                        if self.is_dirty {
+                            // Show confirmation dialog first
+                            self.show_open_dialog = true;
+                        } else {
+                            // No unsaved changes, open file picker directly
+                            if let Some(path) = rfd::FileDialog::new().pick_file() {
                                 if let Err(e) = self.open_file(path) {
                                     eprintln!("Failed to open file: {}", e);
                                 }
@@ -336,18 +333,18 @@ impl eframe::App for MyApp {
                             if let Err(e) = self.save_file_as(path) {
                                 eprintln!("Failed to save file: {}", e);
                             } else {
-                                // Now open the pending file
-                                if let Some(pending_path) = self.pending_open_path.take() {
-                                    if let Err(e) = self.open_file(pending_path) {
+                                // Now show file picker to open new file
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    if let Err(e) = self.open_file(path) {
                                         eprintln!("Failed to open file: {}", e);
                                     }
                                 }
                             }
                         }
                     } else {
-                        // Save succeeded, now open the pending file
-                        if let Some(pending_path) = self.pending_open_path.take() {
-                            if let Err(e) = self.open_file(pending_path) {
+                        // Save succeeded, now show file picker to open new file
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            if let Err(e) = self.open_file(path) {
                                 eprintln!("Failed to open file: {}", e);
                             }
                         }
@@ -355,9 +352,9 @@ impl eframe::App for MyApp {
                     self.show_open_dialog = false;
                 }
                 OpenAction::DontSave => {
-                    // Discard changes and open the pending file
-                    if let Some(pending_path) = self.pending_open_path.take() {
-                        if let Err(e) = self.open_file(pending_path) {
+                    // Discard changes and show file picker
+                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        if let Err(e) = self.open_file(path) {
                             eprintln!("Failed to open file: {}", e);
                         }
                     }
@@ -365,7 +362,6 @@ impl eframe::App for MyApp {
                 }
                 OpenAction::Cancel => {
                     // Cancel the open operation
-                    self.pending_open_path = None;
                     self.show_open_dialog = false;
                 }
                 OpenAction::None => {}
