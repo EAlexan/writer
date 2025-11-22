@@ -6,6 +6,7 @@ struct MyApp {
     text: String,
     show_about_window: bool,
     filename: Option<String>,
+    file_path: Option<std::path::PathBuf>,
     is_dirty: bool,
     last_saved_text: String,
 }
@@ -28,13 +29,36 @@ impl eframe::App for MyApp {
                                 self.filename = path.file_name()
                                     .and_then(|n| n.to_str())
                                     .map(|s| s.to_string());
+                                self.file_path = Some(path);
                                 self.is_dirty = false;
                             }
                         }
                     }
                     if ui.button("Save").clicked()
                     {
-                        //To do: Implement save functionality
+                        // If we have a file path, save to it; otherwise, prompt for a new file
+                        if let Some(path) = &self.file_path {
+                            if let Err(e) = std::fs::write(path, &self.text) {
+                                eprintln!("Failed to save file: {}", e);
+                            } else {
+                                self.last_saved_text = self.text.clone();
+                                self.is_dirty = false;
+                            }
+                        } else {
+                            // No file path, prompt for Save As
+                            if let Some(path) = rfd::FileDialog::new().save_file() {
+                                if let Err(e) = std::fs::write(&path, &self.text) {
+                                    eprintln!("Failed to save file: {}", e);
+                                } else {
+                                    self.last_saved_text = self.text.clone();
+                                    self.filename = path.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .map(|s| s.to_string());
+                                    self.file_path = Some(path);
+                                    self.is_dirty = false;
+                                }
+                            }
+                        }
                     }
                     if ui.button("Save As").clicked()
                     {
@@ -46,6 +70,7 @@ impl eframe::App for MyApp {
                                 self.filename = path.file_name()
                                     .and_then(|n| n.to_str())
                                     .map(|s| s.to_string());
+                                self.file_path = Some(path);
                                 self.is_dirty = false;
                             }
                         }
