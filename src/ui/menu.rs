@@ -33,8 +33,8 @@ pub fn render_menu(
     
     // Add menu button named "Search"
     ui.menu_button("Search", |ui| {
-        if ui.button("Find").clicked() {
-            //To do: Implement find functionality
+        if ui.button("Find").on_hover_text("Cmd+F").clicked() {
+            action = MenuAction::Find;
         }
     });
     
@@ -55,4 +55,5 @@ pub enum MenuAction {
     Save,
     SaveAs,
     Quit,
+    Find,
 }
