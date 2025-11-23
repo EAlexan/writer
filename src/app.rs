@@ -2,6 +2,7 @@ use eframe::egui;
 use crate::actions::ConfirmationAction;
 use crate::file_ops;
 use crate::ui::{menu, status_bar, dialogs};
+use crate::search::SearchState;
 
 #[derive(Default)]
 pub struct MyApp {
@@ -15,10 +16,7 @@ pub struct MyApp {
     pub show_open_dialog: bool,
     pub show_error_dialog: bool,
     pub error_message: String,
-    pub show_find_bar: bool,
-    pub find_query: String,
-    pub find_results: Vec<usize>,
-    pub current_match_index: Option<usize>,
+    pub search: SearchState,
 }
 
 impl MyApp {
@@ -102,52 +100,6 @@ impl MyApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
-
-    /// Update search results based on current query
-    fn update_search_results(&mut self) {
-        self.find_results.clear();
-        self.current_match_index = None;
-        
-        if self.find_query.is_empty() {
-            return;
-        }
-        
-        self.find_results = self.text.match_indices(&self.find_query).map(|(i, _)| i).collect();
-        
-        if !self.find_results.is_empty() {
-            self.current_match_index = Some(0);
-        }
-    }
-    
-    /// Move to the next search result
-    fn find_next(&mut self) {
-        if self.find_results.is_empty() {
-            return;
-        }
-        
-        if let Some(current) = self.current_match_index {
-            self.current_match_index = Some((current + 1) % self.find_results.len());
-        } else {
-            self.current_match_index = Some(0);
-        }
-    }
-    
-    /// Move to the previous search result
-    fn find_previous(&mut self) {
-        if self.find_results.is_empty() {
-            return;
-        }
-        
-        if let Some(current) = self.current_match_index {
-            if current == 0 {
-                self.current_match_index = Some(self.find_results.len() - 1);
-            } else {
-                self.current_match_index = Some(current - 1);
-            }
-        } else {
-            self.current_match_index = Some(self.find_results.len() - 1);
-        }
-    }
 }
 
 impl eframe::App for MyApp {
@@ -184,7 +136,7 @@ impl eframe::App for MyApp {
 
             // Cmd+F for Find (Ctrl+F on non-macOS)
             if i.modifiers.command && i.key_pressed(egui::Key::F) {
-                self.show_find_bar = !self.show_find_bar;
+                self.search.show_bar = !self.search.show_bar;
             }
         });
         
@@ -214,121 +166,26 @@ impl eframe::App for MyApp {
                     menu::MenuAction::Save => self.handle_save_action(),
                     menu::MenuAction::SaveAs => self.handle_save_as_action(),
                     menu::MenuAction::Quit => self.handle_quit_action(ctx),
-                    menu::MenuAction::Find => self.show_find_bar = !self.show_find_bar,
+                    menu::MenuAction::Find => self.search.show_bar = !self.search.show_bar,
                     menu::MenuAction::None => {}
                 }
             });
         });
 
         // Find Bar
-        if self.show_find_bar {
+        if self.search.show_bar {
             egui::TopBottomPanel::top("find_panel").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Find:");
-                    let response = ui.text_edit_singleline(&mut self.find_query);
-                    if response.changed() {
-                        self.update_search_results();
-                    }
-                    
-                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        self.find_next();
-                    }
-                    
-                    if ui.button("Next").clicked() {
-                        self.find_next();
-                    }
-                    
-                    if ui.button("Previous").clicked() {
-                        self.find_previous();
-                    }
-                    
-                    if let Some(index) = self.current_match_index {
-                        ui.label(format!("Match {} of {}", index + 1, self.find_results.len()));
-                    } else if !self.find_query.is_empty() && self.find_results.is_empty() {
-                        ui.label("No matches found");
-                    }
-                    
-                    if ui.button("Close").clicked() {
-                        self.show_find_bar = false;
-                        self.find_query.clear();
-                        self.find_results.clear();
-                        self.current_match_index = None;
-                    }
-                });
+                self.search.render_bar(ui, &self.text);
             });
         }
+
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             status_bar::render_status_bar(ui, &self.filename, self.is_dirty);
         });
 
         // Central area: text edit filling the remaining space
         egui::CentralPanel::default().show(ctx, |ui| {
-            let find_results = self.find_results.clone();
-            let match_len = self.find_query.len();
-            let current_match_index = self.current_match_index;
-
-            let mut layouter = move |ui: &egui::Ui, string: &dyn egui::TextBuffer, wrap_width: f32| {
-                let string = string.as_str();
-                let mut layout_job = egui::text::LayoutJob::default();
-                
-                if find_results.is_empty() || match_len == 0 {
-                    layout_job.append(
-                        string,
-                        0.0,
-                        egui::TextFormat {
-                            font_id: egui::FontId::monospace(14.0),
-                            ..Default::default()
-                        },
-                    );
-                } else {
-                    let mut last_index = 0;
-                    for (i, &index) in find_results.iter().enumerate() {
-                        if index > last_index {
-                            layout_job.append(
-                                &string[last_index..index],
-                                0.0,
-                                egui::TextFormat {
-                                    font_id: egui::FontId::monospace(14.0),
-                                    ..Default::default()
-                                },
-                            );
-                        }
-                        
-                        let bg_color = if Some(i) == current_match_index {
-                            egui::Color32::from_rgb(255, 165, 0) // Orange for current
-                        } else {
-                            egui::Color32::YELLOW // Yellow for others
-                        };
-                        
-                        layout_job.append(
-                            &string[index..index + match_len],
-                            0.0,
-                            egui::TextFormat {
-                                font_id: egui::FontId::monospace(14.0),
-                                background: bg_color,
-                                color: egui::Color32::BLACK,
-                                ..Default::default()
-                            },
-                        );
-                        
-                        last_index = index + match_len;
-                    }
-                    
-                    if last_index < string.len() {
-                        layout_job.append(
-                            &string[last_index..],
-                            0.0,
-                            egui::TextFormat {
-                                font_id: egui::FontId::monospace(14.0),
-                                ..Default::default()
-                            },
-                        );
-                    }
-                }
-                
-                layout_job.wrap.max_width = wrap_width;
-                ui.painter().layout_job(layout_job)
-            };
+            let mut layouter = self.search.get_layouter();
 
             ui.add_sized(
                 ui.available_size(),
