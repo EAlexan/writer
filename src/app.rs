@@ -349,7 +349,7 @@ impl eframe::App for MyApp {
                 .id_source("main_editor")
                 .with_rows(50)  // High minimum row count
                 .with_fontsize(14.0)
-                .with_theme(ColorTheme::GRUVBOX)
+                .with_theme(ColorTheme::GITHUB_DARK)
                 .with_syntax(syntax::get_syntax_for_file(self.filename.as_ref(), self.syntax_highlighting))
                 .with_numlines(self.show_line_numbers)
                 .vscroll(true)
