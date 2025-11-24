@@ -4,6 +4,8 @@ use eframe::egui;
 pub fn render_menu(
     ui: &mut egui::Ui,
     show_about_window: &mut bool,
+    can_undo: bool,
+    can_redo: bool,
 ) -> MenuAction {
     let mut action = MenuAction::None;
     
@@ -26,9 +28,16 @@ pub fn render_menu(
     
     // Add menu button named "Edit"
     ui.menu_button("Edit", |ui| {
-        if ui.button("Undo").clicked() {
-            //To do: Implement undo functionality
-        }
+        ui.add_enabled_ui(can_undo, |ui| {
+            if ui.button("Undo").on_hover_text("Ctrl+Z").clicked() {
+                action = MenuAction::Undo;
+            }
+        });
+        ui.add_enabled_ui(can_redo, |ui| {
+            if ui.button("Redo").on_hover_text("Ctrl+Y").clicked() {
+                action = MenuAction::Redo;
+            }
+        });
     });
     
     // Add menu button named "Search"
@@ -56,4 +65,6 @@ pub enum MenuAction {
     SaveAs,
     Quit,
     Find,
+    Undo,
+    Redo,
 }

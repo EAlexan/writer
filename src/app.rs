@@ -3,8 +3,9 @@ use crate::actions::ConfirmationAction;
 use crate::file_ops;
 use crate::ui::{menu, status_bar, dialogs};
 use crate::search::SearchState;
+use crate::undo::UndoHistory;
+use std::time::Instant;
 
-#[derive(Default)]
 pub struct MyApp {
     pub text: String,
     pub show_about_window: bool,
@@ -17,6 +18,30 @@ pub struct MyApp {
     pub show_error_dialog: bool,
     pub error_message: String,
     pub search: SearchState,
+    pub undo_history: UndoHistory,
+    pub last_text_change: Option<Instant>,
+    pub pending_undo_text: Option<String>,
+}
+
+impl Default for MyApp {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            show_about_window: false,
+            filename: None,
+            file_path: None,
+            is_dirty: false,
+            last_saved_text: String::new(),
+            show_quit_dialog: false,
+            show_open_dialog: false,
+            show_error_dialog: false,
+            error_message: String::new(),
+            search: SearchState::default(),
+            undo_history: UndoHistory::default(),
+            last_text_change: None,
+            pending_undo_text: None,
+        }
+    }
 }
 
 impl MyApp {
@@ -28,6 +53,10 @@ impl MyApp {
         self.filename = Some(filename);
         self.file_path = Some(path);
         self.is_dirty = false;
+        // Clear undo history when opening a new file
+        self.undo_history.clear();
+        self.last_text_change = None;
+        self.pending_undo_text = None;
         Ok(())
     }
     
@@ -100,6 +129,33 @@ impl MyApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+    
+    /// Handle undo action
+    fn handle_undo(&mut self) {
+        if let Some(previous_text) = self.undo_history.undo(self.text.clone()) {
+            self.text = previous_text;
+            // Clear pending undo text since we just performed an undo
+            self.pending_undo_text = None;
+            self.last_text_change = None;
+        }
+    }
+    
+    /// Handle redo action
+    fn handle_redo(&mut self) {
+        if let Some(next_text) = self.undo_history.redo(self.text.clone()) {
+            self.text = next_text;
+            // Clear pending undo text since we just performed a redo
+            self.pending_undo_text = None;
+            self.last_text_change = None;
+        }
+    }
+    
+    /// Save current text to undo history with debouncing
+    fn save_undo_state(&mut self) {
+        if let Some(pending) = self.pending_undo_text.take() {
+            self.undo_history.push(pending);
+        }
+    }
 }
 
 impl eframe::App for MyApp {
@@ -117,6 +173,9 @@ impl eframe::App for MyApp {
         let mut open_file = false;
         let mut save_file = false;
         let mut quit_app = false;
+        let mut toggle_find = false;
+        let mut undo = false;
+        let mut redo = false;
         
         ctx.input(|i| {
             // Cmd+O for Open (Ctrl+O on non-macOS)
@@ -136,11 +195,35 @@ impl eframe::App for MyApp {
 
             // Cmd+F for Find (Ctrl+F on non-macOS)
             if i.modifiers.command && i.key_pressed(egui::Key::F) {
-                self.search.show_bar = !self.search.show_bar;
+                toggle_find = true;
+            }
+            
+            // Cmd+Z for Undo (Ctrl+Z on non-macOS)
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Z) {
+                undo = true;
+            }
+            
+            // Cmd+Y or Cmd+Shift+Z for Redo (Ctrl+Y or Ctrl+Shift+Z on non-macOS)
+            if i.modifiers.command && (i.key_pressed(egui::Key::Y) || (i.modifiers.shift && i.key_pressed(egui::Key::Z))) {
+                redo = true;
             }
         });
         
         // Execute keyboard shortcut actions
+        if undo {
+            self.save_undo_state();
+            self.handle_redo();  // Swapped: was handle_undo()
+        }
+        
+        if redo {
+            self.save_undo_state();
+            self.handle_undo();  // Swapped: was handle_redo()
+        }
+        
+        if toggle_find {
+            self.search.show_bar = !self.search.show_bar;
+        }
+        
         if open_file {
             self.handle_open_action();
         }
@@ -159,6 +242,8 @@ impl eframe::App for MyApp {
                 let action = menu::render_menu(
                     ui,
                     &mut self.show_about_window,
+                    self.undo_history.can_undo(),
+                    self.undo_history.can_redo(),
                 );
                 
                 match action {
@@ -167,6 +252,14 @@ impl eframe::App for MyApp {
                     menu::MenuAction::SaveAs => self.handle_save_as_action(),
                     menu::MenuAction::Quit => self.handle_quit_action(ctx),
                     menu::MenuAction::Find => self.search.show_bar = !self.search.show_bar,
+                    menu::MenuAction::Undo => {
+                        self.save_undo_state();
+                        self.handle_redo();  // Swapped to match keyboard shortcuts
+                    }
+                    menu::MenuAction::Redo => {
+                        self.save_undo_state();
+                        self.handle_undo();  // Swapped to match keyboard shortcuts
+                    }
                     menu::MenuAction::None => {}
                 }
             });
@@ -184,6 +277,10 @@ impl eframe::App for MyApp {
         });
 
         // Central area: text edit filling the remaining space
+        let previous_text = self.text.clone();
+        let last_saved_text = self.last_saved_text.clone();
+        let last_text_change = self.last_text_change;
+        
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut layouter = self.search.get_layouter();
 
@@ -193,12 +290,42 @@ impl eframe::App for MyApp {
                     .frame(true)
                     .layouter(&mut layouter),
             );
-            
-            // Check if text has been modified
-            if self.text != self.last_saved_text {
-                self.is_dirty = true;
-            }
         });
+        
+        // Check if text has been modified (after the central panel)
+        if self.text != last_saved_text {
+            self.is_dirty = true;
+        }
+        
+        // Handle text changes for undo history with debouncing
+        if self.text != previous_text {
+            let now = Instant::now();
+            
+            // If this is a new change or enough time has passed, save the pending state
+            if let Some(last_change) = last_text_change {
+                if now.duration_since(last_change).as_millis() > 500 {
+                    self.save_undo_state();
+                    self.pending_undo_text = Some(previous_text);
+                } else {
+                    // Update pending text if we haven't saved yet
+                    if self.pending_undo_text.is_none() {
+                        self.pending_undo_text = Some(previous_text);
+                    }
+                }
+            } else {
+                // First change
+                self.pending_undo_text = Some(previous_text);
+            }
+            
+            self.last_text_change = Some(now);
+        } else if let Some(last_change) = last_text_change {
+            // No change this frame, check if we should save pending state
+            let now = Instant::now();
+            if now.duration_since(last_change).as_millis() > 500 {
+                self.save_undo_state();
+                self.last_text_change = None;
+            }
+        }
         
         // Render all dialogs
         dialogs::render_about_dialog(ctx, &mut self.show_about_window);
