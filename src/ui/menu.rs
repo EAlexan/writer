@@ -1,16 +1,21 @@
 use eframe::egui;
 
-/// Render the top menu bar with File, Edit, Search, and Help menus
+/// Render the top menu bar with File, Edit, View, Search, and Help menus
 pub fn render_menu(
     ui: &mut egui::Ui,
     show_about_window: &mut bool,
     can_undo: bool,
     can_redo: bool,
+    show_line_numbers: bool,
+    syntax_highlighting: bool,
 ) -> MenuAction {
     let mut action = MenuAction::None;
     
     // Adds a menu button named "File"
     ui.menu_button("File", |ui| {
+        if ui.button("New").on_hover_text("Ctrl+N").clicked() {
+            action = MenuAction::New;
+        }
         if ui.button("Open").on_hover_text("Cmd+O").clicked() {
             action = MenuAction::Open;
         }
@@ -40,6 +45,16 @@ pub fn render_menu(
         });
     });
     
+    // Add menu button named "View"
+    ui.menu_button("View", |ui| {
+        if ui.checkbox(&mut show_line_numbers.clone(), "Line Numbers").clicked() {
+            action = MenuAction::ToggleLineNumbers;
+        }
+        if ui.checkbox(&mut syntax_highlighting.clone(), "Syntax Highlighting").clicked() {
+            action = MenuAction::ToggleSyntaxHighlighting;
+        }
+    });
+    
     // Add menu button named "Search"
     ui.menu_button("Search", |ui| {
         if ui.button("Find").on_hover_text("Cmd+F").clicked() {
@@ -60,6 +75,7 @@ pub fn render_menu(
 /// Actions that can be triggered from the menu
 pub enum MenuAction {
     None,
+    New,
     Open,
     Save,
     SaveAs,
@@ -67,4 +83,6 @@ pub enum MenuAction {
     Find,
     Undo,
     Redo,
+    ToggleLineNumbers,
+    ToggleSyntaxHighlighting,
 }

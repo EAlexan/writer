@@ -78,6 +78,27 @@ impl SearchState {
             
             if let Some(index) = self.current_match_index {
                 ui.label(format!("Match {} of {}", index + 1, self.results.len()));
+                
+                // Show context of current match
+                if let Some(&match_pos) = self.results.get(index) {
+                    let line_num = text[..match_pos].chars().filter(|&c| c == '\n').count() + 1;
+                    
+                    // Get the line containing the match
+                    let line_start = text[..match_pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                    let line_end = text[match_pos..].find('\n')
+                        .map(|i| match_pos + i)
+                        .unwrap_or(text.len());
+                    let line_text = &text[line_start..line_end];
+                    
+                    // Show line number and preview
+                    ui.label(format!("Line {}: {}", line_num, 
+                        if line_text.len() > 50 {
+                            format!("{}...", &line_text[..50])
+                        } else {
+                            line_text.to_string()
+                        }
+                    ));
+                }
             } else if !self.query.is_empty() && self.results.is_empty() {
                 ui.label("No matches found");
             }

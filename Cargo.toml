@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 eframe = "0.33"
 rfd = "0.15"
+egui_code_editor = "0.2.20"

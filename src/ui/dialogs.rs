@@ -60,6 +60,34 @@ pub fn render_confirmation_dialog(
     action
 }
 
+/// Renders a confirmation dialog for creating a new file when there are unsaved changes
+pub fn render_new_dialog(ctx: &egui::Context, show: &mut bool) -> ConfirmationAction {
+    let mut action = ConfirmationAction::None;
+    
+    if *show {
+        egui::Window::new("Unsaved Changes")
+            .open(show)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label("Do you want to save changes before creating a new file?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        action = ConfirmationAction::Save;
+                    }
+                    if ui.button("Don't Save").clicked() {
+                        action = ConfirmationAction::DontSave;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        action = ConfirmationAction::Cancel;
+                    }
+                });
+            });
+    }
+    
+    action
+}
+
 /// Render the quit confirmation dialog
 pub fn render_quit_dialog(
     ctx: &egui::Context,
