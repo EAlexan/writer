@@ -259,12 +259,12 @@ impl eframe::App for MyApp {
         // Execute keyboard shortcut actions
         if undo {
             self.save_undo_state();
-            self.handle_redo();  // Swapped: was handle_undo()
+            self.handle_redo();  // Swapped back as per user request
         }
         
         if redo {
             self.save_undo_state();
-            self.handle_undo();  // Swapped: was handle_redo()
+            self.handle_undo();  // Swapped back as per user request
         }
         
         if toggle_find {
@@ -308,11 +308,11 @@ impl eframe::App for MyApp {
                     menu::MenuAction::Find => self.search.show_bar = !self.search.show_bar,
                     menu::MenuAction::Undo => {
                         self.save_undo_state();
-                        self.handle_redo();  // Swapped to match keyboard shortcuts
+                        self.handle_undo();
                     }
                     menu::MenuAction::Redo => {
                         self.save_undo_state();
-                        self.handle_undo();  // Swapped to match keyboard shortcuts
+                        self.handle_redo();
                     }
                     menu::MenuAction::ToggleLineNumbers => {
                         self.toggle_line_numbers();
@@ -325,10 +325,18 @@ impl eframe::App for MyApp {
             });
         });
 
+        // Central area: code editor filling the remaining space
+        // Capture previous text BEFORE any potential modifications by render_bar (replace)
+        let previous_text = self.text.clone();
+        let last_saved_text = self.last_saved_text.clone();
+        let last_text_change = self.last_text_change;
+
         // Find Bar
         if self.search.show_bar {
             egui::TopBottomPanel::top("find_panel").show(ctx, |ui| {
-                self.search.render_bar(ui, &self.text);
+                if self.search.render_bar(ui, &mut self.text) {
+                    self.is_dirty = true;
+                }
             });
         }
 
@@ -340,11 +348,6 @@ impl eframe::App for MyApp {
             };
             status_bar::render_status_bar(ui, &self.filename, self.is_dirty, language);
         });
-
-        // Central area: code editor filling the remaining space
-        let previous_text = self.text.clone();
-        let last_saved_text = self.last_saved_text.clone();
-        let last_text_change = self.last_text_change;
         
         egui::CentralPanel::default().show(ctx, |ui| {
             // TODO: Reimplement search highlighting for CodeEditor
