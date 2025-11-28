@@ -333,7 +333,12 @@ impl eframe::App for MyApp {
         }
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            status_bar::render_status_bar(ui, &self.filename, self.is_dirty);
+            let language = if self.filename.is_some() {
+                syntax::get_language_name(self.filename.as_ref())
+            } else {
+                ""
+            };
+            status_bar::render_status_bar(ui, &self.filename, self.is_dirty, language);
         });
 
         // Central area: code editor filling the remaining space
