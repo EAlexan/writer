@@ -116,6 +116,11 @@ impl UndoHistory {
         !self.redo_stack.is_empty()
     }
 
+    /// Peek at the top of the undo stack
+    pub fn peek_undo(&self) -> Option<&String> {
+        self.undo_stack.back()
+    }
+
     /// Clear all undo and redo history
     /// 
     /// This is useful when opening a new file or when you want to

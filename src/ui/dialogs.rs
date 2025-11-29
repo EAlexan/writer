@@ -138,3 +138,57 @@ pub fn render_error_dialog(
         }
     }
 }
+
+/// Render the Go to Line dialog
+pub fn render_goto_line_dialog(
+    ctx: &egui::Context,
+    show_dialog: &mut bool,
+    line_input: &mut String,
+) -> Option<usize> {
+    let mut target_line = None;
+    let mut close_requested = false;
+
+    if *show_dialog {
+        egui::Window::new("Go to Line")
+            .open(show_dialog)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Line number:");
+                    let response = ui.text_edit_singleline(line_input);
+                    
+                    // Focus the input field when dialog opens
+                    response.request_focus();
+                    
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Ok(line) = line_input.trim().parse::<usize>() {
+                            target_line = Some(line);
+                            close_requested = true;
+                        }
+                    }
+                });
+                
+                ui.separator();
+                
+                ui.horizontal(|ui| {
+                    if ui.button("Go").clicked() {
+                        if let Ok(line) = line_input.trim().parse::<usize>() {
+                            target_line = Some(line);
+                            close_requested = true;
+                        }
+                    }
+                    
+                    if ui.button("Cancel").clicked() {
+                        close_requested = true;
+                    }
+                });
+            });
+            
+        if close_requested {
+            *show_dialog = false;
+        }
+    }
+
+    target_line
+}

@@ -5,5 +5,6 @@ pub mod ui;
 pub mod search;
 pub mod undo;
 pub mod syntax;
+pub mod input;
 
 pub use app::MyApp;

@@ -60,6 +60,9 @@ pub fn render_menu(
         if ui.button("Find").on_hover_text("Cmd+F").clicked() {
             action = MenuAction::Find;
         }
+        if ui.button("Go to Line").on_hover_text("Cmd+G").clicked() {
+            action = MenuAction::GoToLine;
+        }
     });
     
     // Add menu button named "Help"
@@ -85,4 +88,5 @@ pub enum MenuAction {
     Redo,
     ToggleLineNumbers,
     ToggleSyntaxHighlighting,
+    GoToLine,
 }

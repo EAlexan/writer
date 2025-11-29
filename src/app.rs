@@ -27,6 +27,10 @@ pub struct MyApp {
     // Code editor configuration
     pub show_line_numbers: bool,
     pub syntax_highlighting: bool,
+    pub show_goto_line_dialog: bool,
+    pub goto_line_input: String,
+    pub scroll_to_line: Option<usize>,
+    pub suppress_undo_save: bool,
 }
 
 impl Default for MyApp {
@@ -50,6 +54,10 @@ impl Default for MyApp {
             // User preferences: both off by default
             show_line_numbers: false,
             syntax_highlighting: false,
+            show_goto_line_dialog: false,
+            goto_line_input: String::new(),
+            scroll_to_line: None,
+            suppress_undo_save: false,
         }
     }
 }
@@ -67,6 +75,7 @@ impl MyApp {
         self.undo_history.clear();
         self.last_text_change = None;
         self.pending_undo_text = None;
+        self.suppress_undo_save = true;
         Ok(())
     }
     
@@ -106,6 +115,7 @@ impl MyApp {
         self.undo_history.clear();
         self.last_text_change = None;
         self.pending_undo_text = None;
+        self.suppress_undo_save = true;
     }
     
     /// Show an error message to the user in a dialog
@@ -115,7 +125,7 @@ impl MyApp {
     }
     
     /// Handle new file action with proper save confirmation
-    fn handle_new_action(&mut self) {
+    pub fn handle_new_action(&mut self) {
         if self.is_dirty {
             self.show_new_dialog = true;
         } else {
@@ -124,7 +134,7 @@ impl MyApp {
     }
     
     /// Handle file open action with proper save confirmation
-    fn handle_open_action(&mut self) {
+    pub fn handle_open_action(&mut self) {
         if self.is_dirty {
             self.show_open_dialog = true;
         } else if let Some(path) = rfd::FileDialog::new().pick_file()
@@ -134,7 +144,7 @@ impl MyApp {
     }
     
     /// Handle file save action with save-as fallback
-    fn handle_save_action(&mut self) {
+    pub fn handle_save_action(&mut self) {
         if self.save_file().is_err() {
             // No file path, prompt for Save As
             if let Some(path) = rfd::FileDialog::new().save_file()
@@ -153,7 +163,7 @@ impl MyApp {
     }
     
     /// Handle quit action with proper save confirmation
-    fn handle_quit_action(&mut self, ctx: &egui::Context) {
+    pub fn handle_quit_action(&mut self, ctx: &egui::Context) {
         if self.is_dirty {
             self.show_quit_dialog = true;
         } else {
@@ -162,7 +172,7 @@ impl MyApp {
     }
     
     /// Handle undo action
-    fn handle_undo(&mut self) {
+    pub fn handle_undo(&mut self) {
         if let Some(previous_text) = self.undo_history.undo(self.text.clone()) {
             self.text = previous_text;
             // Clear pending undo text since we just performed an undo
@@ -172,7 +182,7 @@ impl MyApp {
     }
     
     /// Handle redo action
-    fn handle_redo(&mut self) {
+    pub fn handle_redo(&mut self) {
         if let Some(next_text) = self.undo_history.redo(self.text.clone()) {
             self.text = next_text;
             // Clear pending undo text since we just performed a redo
@@ -182,8 +192,17 @@ impl MyApp {
     }
     
     /// Save current text to undo history with debouncing
-    fn save_undo_state(&mut self) {
+    pub fn save_undo_state(&mut self) {
+        if self.suppress_undo_save {
+            return;
+        }
         if let Some(pending) = self.pending_undo_text.take() {
+            // Don't push if it's identical to the last state
+            if let Some(last) = self.undo_history.peek_undo() {
+                if last == &pending {
+                    return;
+                }
+            }
             self.undo_history.push(pending);
         }
     }
@@ -196,6 +215,95 @@ impl MyApp {
     /// Toggle syntax highlighting
     pub fn toggle_syntax_highlighting(&mut self) {
         self.syntax_highlighting = !self.syntax_highlighting;
+    }
+    /// Handle result from quit dialog
+    fn handle_quit_dialog_result(&mut self, action: ConfirmationAction, ctx: &egui::Context) {
+        match action {
+            ConfirmationAction::Save => {
+                if self.save_file().is_err() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        if let Err(e) = self.save_file_as(path) {
+                            self.show_error(format!("Failed to save file: {}", e));
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                self.show_quit_dialog = false;
+            }
+            ConfirmationAction::DontSave => {
+                self.show_quit_dialog = false;
+                self.is_dirty = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            ConfirmationAction::Cancel => {
+                self.show_quit_dialog = false;
+            }
+            ConfirmationAction::None => {}
+        }
+    }
+
+    /// Handle result from open dialog
+    fn handle_open_dialog_result(&mut self, action: ConfirmationAction) {
+        match action {
+            ConfirmationAction::Save => {
+                if self.save_file().is_err() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        if let Err(e) = self.save_file_as(path) {
+                            self.show_error(format!("Failed to save file: {}", e));
+                        } else if let Some(path) = rfd::FileDialog::new().pick_file()
+                        && let Err(e) = self.open_file(path) {
+                            self.show_error(format!("Failed to open file: {}", e));
+                        }
+                    }
+                } else if let Some(path) = rfd::FileDialog::new().pick_file()
+                && let Err(e) = self.open_file(path) {
+                    self.show_error(format!("Failed to open file: {}", e));
+                }
+                self.show_open_dialog = false;
+            }
+            ConfirmationAction::DontSave => {
+                if let Some(path) = rfd::FileDialog::new().pick_file()
+                    && let Err(e) = self.open_file(path) {
+                        self.show_error(format!("Failed to open file: {}", e));
+                    }
+                self.show_open_dialog = false;
+            }
+            ConfirmationAction::Cancel => {
+                self.show_open_dialog = false;
+            }
+            ConfirmationAction::None => {}
+        }
+    }
+
+    /// Handle result from new dialog
+    fn handle_new_dialog_result(&mut self, action: ConfirmationAction) {
+        match action {
+            ConfirmationAction::Save => {
+                if self.save_file().is_err() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        if let Err(e) = self.save_file_as(path) {
+                            self.show_error(format!("Failed to save file: {}", e));
+                        } else {
+                            self.new_file();
+                        }
+                    }
+                } else {
+                    self.new_file();
+                }
+                self.show_new_dialog = false;
+            }
+            ConfirmationAction::DontSave => {
+                self.show_new_dialog = false;
+                self.new_file();
+            }
+            ConfirmationAction::Cancel => {
+                self.show_new_dialog = false;
+            }
+            ConfirmationAction::None => {}
+        }
     }
 }
 
@@ -211,81 +319,7 @@ impl eframe::App for MyApp {
             // If not dirty, allow the close to proceed naturally
         
         // Keyboard shortcuts
-        let mut undo = false;
-        let mut redo = false;
-        let mut toggle_find = false;
-        let mut new_file = false;
-        let mut open_file = false;
-        let mut save_file = false;
-        let mut quit_app = false;
-        
-        ctx.input(|i| {
-            // Ctrl+N - New file
-            if i.modifiers.command && i.key_pressed(egui::Key::N) {
-                new_file = true;
-            }
-            
-            // Ctrl+O - Open file
-            if i.modifiers.command && i.key_pressed(egui::Key::O) {
-                open_file = true;
-            }
-            
-            // Ctrl+S - Save file
-            if i.modifiers.command && i.key_pressed(egui::Key::S) {
-                save_file = true;
-            }
-            
-            // Ctrl+Q - Quit
-            if i.modifiers.command && i.key_pressed(egui::Key::Q) {
-                quit_app = true;
-            }
-
-            // Ctrl+F - Find
-            if i.modifiers.command && i.key_pressed(egui::Key::F) {
-                toggle_find = true;
-            }
-            
-            // Ctrl+Z - Undo
-            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Z) {
-                undo = true;
-            }
-            
-            // Ctrl+Y or Ctrl+Shift+Z - Redo
-            if i.modifiers.command && (i.key_pressed(egui::Key::Y) || (i.modifiers.shift && i.key_pressed(egui::Key::Z))) {
-                redo = true;
-            }
-        });
-        
-        // Execute keyboard shortcut actions
-        if undo {
-            self.save_undo_state();
-            self.handle_redo();  // Swapped: was handle_undo()
-        }
-        
-        if redo {
-            self.save_undo_state();
-            self.handle_undo();  // Swapped: was handle_redo()
-        }
-        
-        if toggle_find {
-            self.search.show_bar = !self.search.show_bar;
-        }
-        
-        if new_file {
-            self.handle_new_action();
-        }
-        
-        if open_file {
-            self.handle_open_action();
-        }
-        
-        if save_file {
-            self.handle_save_action();
-        }
-        
-        if quit_app {
-            self.handle_quit_action(ctx);
-        }
+        crate::input::handle_shortcuts(ctx, self);
         
         // Menubar at the top
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -308,11 +342,11 @@ impl eframe::App for MyApp {
                     menu::MenuAction::Find => self.search.show_bar = !self.search.show_bar,
                     menu::MenuAction::Undo => {
                         self.save_undo_state();
-                        self.handle_redo();  // Swapped to match keyboard shortcuts
+                        self.handle_undo();
                     }
                     menu::MenuAction::Redo => {
                         self.save_undo_state();
-                        self.handle_undo();  // Swapped to match keyboard shortcuts
+                        self.handle_redo();
                     }
                     menu::MenuAction::ToggleLineNumbers => {
                         self.toggle_line_numbers();
@@ -320,45 +354,82 @@ impl eframe::App for MyApp {
                     menu::MenuAction::ToggleSyntaxHighlighting => {
                         self.toggle_syntax_highlighting();
                     }
+                    menu::MenuAction::GoToLine => {
+                        self.show_goto_line_dialog = true;
+                        self.goto_line_input.clear();
+                    }
                     menu::MenuAction::None => {}
                 }
             });
         });
 
+        // Central area: code editor filling the remaining space
+        // Capture previous text BEFORE any potential modifications by render_bar (replace)
+        let previous_text = self.text.clone();
+        let last_saved_text = self.last_saved_text.clone();
+        let last_text_change = self.last_text_change;
+
         // Find Bar
         if self.search.show_bar {
             egui::TopBottomPanel::top("find_panel").show(ctx, |ui| {
-                self.search.render_bar(ui, &self.text);
+                if self.search.render_bar(ui, &mut self.text) {
+                    self.is_dirty = true;
+                }
             });
         }
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            status_bar::render_status_bar(ui, &self.filename, self.is_dirty);
+            let language = if self.filename.is_some() {
+                syntax::get_language_name(self.filename.as_ref())
+            } else {
+                ""
+            };
+            status_bar::render_status_bar(ui, &self.filename, self.is_dirty, language);
         });
-
-        // Central area: code editor filling the remaining space
-        let previous_text = self.text.clone();
-        let last_saved_text = self.last_saved_text.clone();
-        let last_text_change = self.last_text_change;
         
         egui::CentralPanel::default().show(ctx, |ui| {
             // TODO: Reimplement search highlighting for CodeEditor
             // For now, search will work but without visual highlighting
             
-            CodeEditor::default()
-                .id_source("main_editor")
-                .with_rows(50)  // High minimum row count
-                .with_fontsize(14.0)
-                .with_theme(ColorTheme::GITHUB_DARK)
-                .with_syntax(syntax::get_syntax_for_file(self.filename.as_ref(), self.syntax_highlighting))
-                .with_numlines(self.show_line_numbers)
-                .vscroll(true)
-                .show(ui, &mut self.text);
+            let row_height = ui.painter().layout_no_wrap(
+                "A".to_string(),
+                egui::FontId::monospace(14.0),
+                egui::Color32::TRANSPARENT
+            ).size().y;
+            
+            egui::ScrollArea::vertical()
+                .id_salt("editor_scroll")
+                .show(ui, |ui| {
+                    if let Some(line) = self.scroll_to_line.take() {
+                        ui.scroll_to_rect(
+                            egui::Rect::from_min_size(
+                                egui::pos2(0.0, line as f32 * row_height),
+                                egui::vec2(0.0, row_height)
+                            ),
+                            Some(egui::Align::Center)
+                        );
+                    }
+                    
+                    CodeEditor::default()
+                        .id_source("main_editor")
+                        .with_rows(50)  // High minimum row count
+                        .with_fontsize(14.0)
+                        .with_theme(ColorTheme::GITHUB_DARK)
+                        .with_syntax(syntax::get_syntax_for_file(self.filename.as_ref(), self.syntax_highlighting))
+                        .with_numlines(self.show_line_numbers)
+                        .vscroll(false) // Disable internal scrolling to let ScrollArea handle it
+                        .show(ui, &mut self.text);
+                });
         });
         
         // Check if text has been modified (after the central panel)
         if self.text != last_saved_text {
             self.is_dirty = true;
+        }
+        
+        // Reset suppress flag after first frame
+        if self.suppress_undo_save {
+            self.suppress_undo_save = false;
         }
         
         // Handle text changes for undo history with debouncing
@@ -395,92 +466,28 @@ impl eframe::App for MyApp {
         dialogs::render_about_dialog(ctx, &mut self.show_about_window);
         
         // Quit confirmation dialog
+        // Quit confirmation dialog
         let quit_action = dialogs::render_quit_dialog(ctx, &mut self.show_quit_dialog);
-        match quit_action {
-            ConfirmationAction::Save => {
-                if self.save_file().is_err() {
-                    if let Some(path) = rfd::FileDialog::new().save_file() {
-                        if let Err(e) = self.save_file_as(path) {
-                            self.show_error(format!("Failed to save file: {}", e));
-                        } else {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-                } else {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                self.show_quit_dialog = false;
-            }
-            ConfirmationAction::DontSave => {
-                self.show_quit_dialog = false;
-                self.is_dirty = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-            ConfirmationAction::Cancel => {
-                self.show_quit_dialog = false;
-            }
-            ConfirmationAction::None => {}
-        }
+        self.handle_quit_dialog_result(quit_action, ctx);
         
         // Open file confirmation dialog
         let open_action = dialogs::render_open_dialog(ctx, &mut self.show_open_dialog);
-        match open_action {
-            ConfirmationAction::Save => {
-                if self.save_file().is_err() {
-                    if let Some(path) = rfd::FileDialog::new().save_file() {
-                        if let Err(e) = self.save_file_as(path) {
-                            self.show_error(format!("Failed to save file: {}", e));
-                        } else if let Some(path) = rfd::FileDialog::new().pick_file()
-                        && let Err(e) = self.open_file(path) {
-                            self.show_error(format!("Failed to open file: {}", e));
-                        }
-                    }
-                } else if let Some(path) = rfd::FileDialog::new().pick_file()
-                && let Err(e) = self.open_file(path) {
-                    self.show_error(format!("Failed to open file: {}", e));
-                }
-                self.show_open_dialog = false;
-            }
-            ConfirmationAction::DontSave => {
-                if let Some(path) = rfd::FileDialog::new().pick_file()
-                    && let Err(e) = self.open_file(path) {
-                        self.show_error(format!("Failed to open file: {}", e));
-                    }
-                self.show_open_dialog = false;
-            }
-            ConfirmationAction::Cancel => {
-                self.show_open_dialog = false;
-            }
-            ConfirmationAction::None => {}
-        }
+        self.handle_open_dialog_result(open_action);
         
         // New file confirmation dialog
         let new_action = dialogs::render_new_dialog(ctx, &mut self.show_new_dialog);
-        match new_action {
-            ConfirmationAction::Save => {
-                if self.save_file().is_err() {
-                    if let Some(path) = rfd::FileDialog::new().save_file() {
-                        if let Err(e) = self.save_file_as(path) {
-                            self.show_error(format!("Failed to save file: {}", e));
-                        } else {
-                            self.new_file();
-                        }
-                    }
-                } else {
-                    self.new_file();
-                }
-                self.show_new_dialog = false;
-            }
-            ConfirmationAction::DontSave => {
-                self.show_new_dialog = false;
-                self.new_file();
-            }
-            ConfirmationAction::Cancel => {
-                self.show_new_dialog = false;
-            }
-            ConfirmationAction::None => {}
-        }
+        self.handle_new_dialog_result(new_action);
         
+        // Go to Line dialog
+        if let Some(target_line) = dialogs::render_goto_line_dialog(ctx, &mut self.show_goto_line_dialog, &mut self.goto_line_input) {
+            // Calculate character index for the target line
+            // Lines are 1-indexed for user, 0-indexed internally
+            if target_line > 0 {
+                let line_idx = target_line - 1;
+                self.scroll_to_line = Some(line_idx);
+            }
+        }
+
         // Error dialog
         dialogs::render_error_dialog(ctx, &mut self.show_error_dialog, &self.error_message);
     }

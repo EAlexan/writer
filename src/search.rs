@@ -4,6 +4,8 @@ use eframe::egui;
 pub struct SearchState {
     pub show_bar: bool,
     pub query: String,
+    pub replace_query: String,
+    pub show_replace: bool,
     pub results: Vec<usize>,
     pub current_match_index: Option<usize>,
 }
@@ -55,61 +57,101 @@ impl SearchState {
         }
     }
 
-    /// Render the Find bar UI
-    pub fn render_bar(&mut self, ui: &mut egui::Ui, text: &str) {
-        ui.horizontal(|ui| {
-            ui.label("Find:");
-            let response = ui.text_edit_singleline(&mut self.query);
-            if response.changed() {
-                self.update_results(text);
-            }
-            
-            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.find_next();
-            }
-            
-            if ui.button("Next").clicked() {
-                self.find_next();
-            }
-            
-            if ui.button("Previous").clicked() {
-                self.find_previous();
-            }
-            
-            if let Some(index) = self.current_match_index {
-                ui.label(format!("Match {} of {}", index + 1, self.results.len()));
-                
-                // Show context of current match
-                if let Some(&match_pos) = self.results.get(index) {
-                    let line_num = text[..match_pos].chars().filter(|&c| c == '\n').count() + 1;
-                    
-                    // Get the line containing the match
-                    let line_start = text[..match_pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                    let line_end = text[match_pos..].find('\n')
-                        .map(|i| match_pos + i)
-                        .unwrap_or(text.len());
-                    let line_text = &text[line_start..line_end];
-                    
-                    // Show line number and preview
-                    ui.label(format!("Line {}: {}", line_num, 
-                        if line_text.len() > 50 {
-                            format!("{}...", &line_text[..50])
-                        } else {
-                            line_text.to_string()
-                        }
-                    ));
+    /// Replace the current match
+    pub fn replace_current(&mut self, text: &mut String) -> bool {
+        if let Some(current_idx) = self.current_match_index {
+            if let Some(&match_pos) = self.results.get(current_idx) {
+                // Verify the text still matches (safety check)
+                if text[match_pos..].starts_with(&self.query) {
+                    text.replace_range(match_pos..match_pos + self.query.len(), &self.replace_query);
+                    self.update_results(text);
+                    // Try to keep selection near where we were
+                    if !self.results.is_empty() {
+                        self.current_match_index = Some(current_idx % self.results.len());
+                    }
+                    return true;
                 }
-            } else if !self.query.is_empty() && self.results.is_empty() {
-                ui.label("No matches found");
             }
+        }
+        false
+    }
+
+    /// Replace all matches
+    pub fn replace_all(&mut self, text: &mut String) -> bool {
+        if !self.results.is_empty() && !self.query.is_empty() {
+            let new_text = text.replace(&self.query, &self.replace_query);
+            if new_text != *text {
+                *text = new_text;
+                self.update_results(text);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Render the Find bar UI
+    pub fn render_bar(&mut self, ui: &mut egui::Ui, text: &mut String) -> bool {
+        let mut modified = false;
+        
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                if ui.button(if self.show_replace { "v" } else { ">" }).clicked() {
+                    self.show_replace = !self.show_replace;
+                }
+                
+                ui.label("Find:");
+                let response = ui.text_edit_singleline(&mut self.query);
+                if response.changed() {
+                    self.update_results(text);
+                }
+                
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.find_next();
+                }
+                
+                if ui.button("Next").clicked() {
+                    self.find_next();
+                }
+                
+                if ui.button("Previous").clicked() {
+                    self.find_previous();
+                }
+                
+                if let Some(index) = self.current_match_index {
+                    ui.label(format!("Match {} of {}", index + 1, self.results.len()));
+                } else if !self.query.is_empty() && self.results.is_empty() {
+                    ui.label("No matches found");
+                }
+                
+                if ui.button("Close").clicked() {
+                    self.show_bar = false;
+                    self.query.clear();
+                    self.results.clear();
+                    self.current_match_index = None;
+                }
+            });
             
-            if ui.button("Close").clicked() {
-                self.show_bar = false;
-                self.query.clear();
-                self.results.clear();
-                self.current_match_index = None;
+            if self.show_replace {
+                ui.horizontal(|ui| {
+                    ui.label("Replace with:");
+                    ui.text_edit_singleline(&mut self.replace_query);
+                    
+                    if ui.add_enabled(self.current_match_index.is_some(), egui::Button::new("Replace")).clicked() {
+                        if self.replace_current(text) {
+                            modified = true;
+                        }
+                    }
+                    
+                    if ui.add_enabled(!self.results.is_empty(), egui::Button::new("Replace All")).clicked() {
+                        if self.replace_all(text) {
+                            modified = true;
+                        }
+                    }
+                });
             }
         });
+        
+        modified
     }
 
     /// Get the layouter for highlighting
